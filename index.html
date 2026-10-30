@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Stämpelklockan</title>
+<meta name="theme-color" content="#EDF1EF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E1412" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Stämpla">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231D7A4E'/%3E%3Ccircle cx='32' cy='32' r='18' fill='none' stroke='white' stroke-width='5'/%3E%3Cpath d='M32 21v12l8 5' fill='none' stroke='white' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<script src="https://accounts.google.com/gsi/client" async></script>
+<script>
+/* ===== INSTÄLLNINGAR – fyll i dessa två ===== */
+window.CONFIG = {
+  // Webbapp-adressen från Apps Script (slutar på /exec)
+  API_URL: "KLISTRA-IN-APPS-SCRIPT-URL/exec",
+  // OAuth-klient-ID från Google Cloud Console
+  CLIENT_ID: "KLISTRA-IN-DIN-CLIENT-ID.apps.googleusercontent.com"
+};
+</script>
+<style>
+/* Layout: one narrow column, status first, big thumb-reach buttons, month ledger below */
+:root{
+  --bg:#EDF1EF; --surface:#FFFFFF; --ink:#13201C; --muted:#5A6964; --line:#D3DBD8;
+  --in:#1D7A4E; --in-soft:#DCEFE4; --brk:#B86E0C; --brk-soft:#F7E8CF; --off:#0F3F39; --danger:#B3261E;
+  --on-strong:#FFFFFF;
+  --f-display:"Familjen Grotesk", "Segoe UI", system-ui, sans-serif;
+  --f-body:"Familjen Grotesk", "Segoe UI", system-ui, sans-serif;
+  --f-mono:"IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#0E1412; --surface:#17201D; --ink:#E4EDE9; --muted:#93A39D; --line:#2A3633;
+  --in:#47BC85; --in-soft:#173328; --brk:#E8A13A; --brk-soft:#3A2B14; --off:#8FD6C8; --danger:#F2867D;
+  --on-strong:#0E1412; color-scheme:dark }}
+*{box-sizing:border-box}
+html,body{background:var(--bg);color:var(--ink);margin:0}
+body{font-family:var(--f-body);font-size:16px;line-height:1.45;-webkit-tap-highlight-color:transparent;
+  padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));
+  padding-top:calc(16px + env(safe-area-inset-top, 0px));padding-bottom:calc(40px + env(safe-area-inset-bottom, 0px))}
+[hidden]{display:none!important}
+.wrap{max-width:480px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+header{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+h1{font-family:var(--f-display);font-size:22px;font-weight:700;margin:0;letter-spacing:-.01em}
+.today{color:var(--muted);font-size:14px}
+.note{font-size:13px;color:var(--muted);background:var(--surface);border:1px dashed var(--line);border-radius:10px;padding:8px 12px}
+.note[data-tone="err"]{color:var(--danger);border-color:var(--danger)}
+
+/* login */
+.login{min-height:70vh;display:flex;flex-direction:column;justify-content:center;gap:18px;max-width:380px;margin:0 auto}
+.login .mark{width:64px;height:64px;border-radius:16px;background:var(--in);display:grid;place-items:center}
+.login h1{font-size:34px}
+.login p{margin:0;color:var(--muted)}
+#gbtn{min-height:44px}
+
+/* status */
+.status{background:var(--surface);border-radius:18px;padding:20px;display:flex;flex-direction:column;gap:14px;border:1px solid var(--line)}
+.pill{align-self:flex-start;display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:5px 12px;border-radius:999px;background:var(--bg);color:var(--muted)}
+.pill::before{content:"";width:8px;height:8px;border-radius:50%;background:currentColor}
+.pill[data-s="in"]{background:var(--in-soft);color:var(--in)}
+.pill[data-s="break"]{background:var(--brk-soft);color:var(--brk)}
+.big{font-size:clamp(44px,15vw,64px);font-weight:500;line-height:1;letter-spacing:-.02em}
+.sub{color:var(--muted);font-size:14px;display:flex;flex-wrap:wrap;gap:4px 16px}
+.sub b{color:var(--ink);font-weight:600}
+
+/* actions */
+.actions{display:grid;gap:10px}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+button:focus-visible,input:focus-visible{outline:3px solid var(--off);outline-offset:2px}
+.punch{width:100%;min-height:84px;border-radius:18px;font-family:var(--f-display);font-size:30px;font-weight:700;color:var(--on-strong);background:var(--in);transition:transform .08s}
+.punch[data-kind="out"]{background:var(--ink);color:var(--bg)}
+.punch:active{transform:scale(.985)}
+.punch small{display:block;font-family:var(--f-body);font-size:13px;font-weight:500;opacity:.85}
+.brkrow{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.brk{min-height:60px;border-radius:14px;font-weight:600;font-size:17px;background:var(--brk-soft);color:var(--brk)}
+.brk.end{grid-column:1/-1;background:var(--brk);color:var(--on-strong);min-height:72px;font-size:20px}
+button:disabled{opacity:.45;cursor:default}
+
+/* month */
+.month{display:flex;flex-direction:column;gap:12px}
+.mhead{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.mhead h2{font-family:var(--f-display);font-size:20px;margin:0;text-transform:capitalize}
+.nav{width:44px;height:44px;border-radius:12px;background:var(--surface);border:1px solid var(--line);font-size:20px}
+.totals{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.tot{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px;min-width:0}
+.tot span{display:block;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.tot b{font-family:var(--f-mono);font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
+.ledger{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.wk{font-size:12px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;padding:10px 14px 4px;background:var(--bg)}
+.row{display:grid;grid-template-columns:4.6em 1fr auto;gap:10px;align-items:center;width:100%;text-align:left;padding:12px 14px;border-top:1px solid var(--line)}
+.wk+.row{border-top:0}
+.row:hover{background:var(--bg)}
+.row .d{font-weight:600}
+.row .t{font-size:14px;min-width:0}
+.row .t small{display:block;color:var(--muted);font-family:var(--f-body);font-size:12px}
+.row .h{font-weight:600}
+.empty{padding:22px 16px;color:var(--muted);font-size:15px}
+.tools{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.btn{min-height:52px;border-radius:12px;font-weight:600;background:var(--surface);border:1px solid var(--line)}
+.btn.primary{background:var(--off);color:var(--bg);border-color:var(--off)}
+.foot{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;color:var(--muted);font-size:13px}
+.link{text-decoration:underline;color:var(--muted);padding:8px 0}
+
+/* sheet */
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:20;display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--surface);width:100%;max-width:520px;border-radius:20px 20px 0 0;display:flex;flex-direction:column;gap:14px;
+  padding:20px max(20px, env(safe-area-inset-right, 0px)) calc(20px + env(safe-area-inset-bottom, 0px)) max(20px, env(safe-area-inset-left, 0px));max-height:90%;overflow:auto}
+.sheet h3{margin:0;font-family:var(--f-display);font-size:20px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);min-width:0}
+input{font:inherit;font-family:var(--f-mono);font-size:17px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px;width:100%;min-width:0}
+.row2{display:flex;gap:10px;flex-wrap:wrap}
+.row2 .btn{flex:1;min-width:120px}
+.btn.danger{color:var(--danger);border-color:var(--danger)}
+.btn.danger.armed{background:var(--danger);color:var(--surface)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom, 0px));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:999px;font-size:14px;font-weight:500;z-index:30;max-width:calc(100% - 32px)}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<!-- Inloggning -->
+<section class="login" id="login">
+  <div class="mark"><svg width="36" height="36" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="20" fill="none" stroke="#fff" stroke-width="5"/><path d="M32 20v13l9 5" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round"/></svg></div>
+  <h1>Stämpelklockan</h1>
+  <p>Logga in med ditt Google-konto för att stämpla in och ut.</p>
+  <div id="gbtn"></div>
+  <div class="note" id="loginmsg" hidden></div>
+</section>
+
+<!-- App -->
+<div class="wrap" id="app" hidden>
+  <header>
+    <h1>Stämpelklockan</h1>
+    <div class="today" id="today"></div>
+  </header>
+
+  <div class="note" id="note" hidden></div>
+
+  <section class="status" aria-live="polite">
+    <span class="pill" id="pill" data-s="off">Hämtar…</span>
+    <div>
+      <div class="big mono" id="clock">0:00:00</div>
+      <div class="sub" style="margin-top:8px"><span>Arbetat idag</span></div>
+    </div>
+    <div class="sub" id="detail"></div>
+  </section>
+
+  <section class="actions">
+    <button class="punch" id="punch" data-kind="in">Kom<small>Stämpla in</small></button>
+    <div class="brkrow" id="brkrow" hidden>
+      <button class="brk" id="b-lunch">Lunchrast</button>
+      <button class="brk" id="b-short">Kort rast</button>
+    </div>
+    <div class="brkrow" id="brkend" hidden>
+      <button class="brk end" id="b-end">Avsluta rast</button>
+    </div>
+  </section>
+
+  <section class="month">
+    <div class="mhead">
+      <button class="nav" id="prev" aria-label="Föregående månad">‹</button>
+      <h2 id="mtitle"></h2>
+      <button class="nav" id="next" aria-label="Nästa månad">›</button>
+    </div>
+    <div class="totals">
+      <div class="tot"><span>Arbetat</span><b id="t-hours">0:00</b></div>
+      <div class="tot"><span>Dagar</span><b id="t-days">0</b></div>
+      <div class="tot"><span>Rast</span><b id="t-brk">0:00</b></div>
+    </div>
+    <div class="ledger" id="ledger"></div>
+    <div class="tools">
+      <button class="btn" id="add">+ Lägg till pass</button>
+      <button class="btn primary" id="export">Exportera CSV</button>
+    </div>
+  </section>
+
+  <div class="foot">
+    <span id="who"></span>
+    <button class="link" id="logout">Logga ut</button>
+  </div>
+</div>
+
+<div class="scrim" id="scrim" hidden>
+  <form class="sheet" id="form">
+    <h3 id="ftitle">Lägg till pass</h3>
+    <label>Datum<input type="date" id="f-date" required></label>
+    <div class="grid2">
+      <label>Kom<input type="time" id="f-in" required></label>
+      <label>Gå<input type="time" id="f-out" required></label>
+    </div>
+    <label>Rast totalt (minuter)<input type="number" id="f-brk" min="0" step="1" inputmode="numeric" value="0"></label>
+    <div class="row2">
+      <button type="button" class="btn" id="f-cancel">Avbryt</button>
+      <button type="submit" class="btn primary" id="f-save">Spara</button>
+    </div>
+    <button type="button" class="btn danger" id="f-del" hidden>Radera pass</button>
+  </form>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(function(){
+const CFG = window.CONFIG;
+const $ = id => document.getElementById(id);
+const DAYS = ["sön","mån","tis","ons","tor","fre","lör"];
+const DAYS_LONG = ["söndag","måndag","tisdag","onsdag","torsdag","fredag","lördag"];
+const MONTHS = ["januari","februari","mars","april","maj","juni","juli","augusti","september","oktober","november","december"];
+const pad = n => String(n).padStart(2,"0");
+const ymKey = d => d.getFullYear()+"-"+pad(d.getMonth()+1);
+const dayKey = d => d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+const hm = ms => { const d=new Date(ms); return pad(d.getHours())+":"+pad(d.getMinutes()); };
+const durHM = ms => { const m=Math.max(0,Math.round(ms/60000)); return Math.floor(m/60)+":"+pad(m%60); };
+const durHMS = ms => { const s=Math.max(0,Math.floor(ms/1000)); return Math.floor(s/3600)+":"+pad(Math.floor(s/60)%60)+":"+pad(s%60); };
+function isoWeek(d){ const t=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())); const day=t.getUTCDay()||7; t.setUTCDate(t.getUTCDate()+4-day); const y=new Date(Date.UTC(t.getUTCFullYear(),0,1)); return Math.ceil(((t-y)/864e5+1)/7); }
+const brkMs = e => e.breakManualMin!=null ? e.breakManualMin*60000 : (e.breaks||[]).reduce((a,b)=>a+(b.e-b.s),0);
+const netMs = e => (e.end-e.start) - brkMs(e);
+
+const st = { current:null, months:{}, view:ymKey(new Date()), busy:false, editing:null, loaded:false, skew:0 };
+const now = () => Date.now() + st.skew;   // justerat mot serverns klocka
+
+function toast(msg){ const t=$("toast"); t.textContent=msg; t.hidden=false; clearTimeout(toast._t); toast._t=setTimeout(()=>t.hidden=true,2800); }
+function note(msg,tone){ const n=$("note"); if(!msg){n.hidden=true;return;} n.textContent=msg; n.dataset.tone=tone||""; n.hidden=false; }
+
+/* ---------- inloggning ---------- */
+const TOK_KEY="stampel-token";
+let token=null, tokenExp=0, waiters=[];
+function decodeJwt(t){ try{ const p=t.split(".")[1].replace(/-/g,"+").replace(/_/g,"/"); const s=atob(p+"===".slice((p.length+3)%4)); return JSON.parse(decodeURIComponent(s.split("").map(c=>"%"+("00"+c.charCodeAt(0).toString(16)).slice(-2)).join(""))); }catch(e){ return null; } }
+function setToken(t){ const p=decodeJwt(t); if(!p) return false; token=t; tokenExp=p.exp*1000; try{ localStorage.setItem(TOK_KEY,t); }catch(e){} $("who").textContent="Inloggad som "+(p.email||""); return true; }
+function clearToken(){ token=null; tokenExp=0; try{ localStorage.removeItem(TOK_KEY); }catch(e){} }
+function tokenValid(){ return token && tokenExp-Date.now()>60000; }
+
+function onCredential(resp){
+  if(!setToken(resp.credential)) return;
+  $("loginmsg").hidden=true;
+  const w=waiters; waiters=[]; w.forEach(f=>f.res(token));
+  showApp();
+  if(!st.loaded) load();
+}
+function showLogin(msg){
+  $("app").hidden=true; $("login").hidden=false;
+  if(msg){ $("loginmsg").textContent=msg; $("loginmsg").hidden=false; }
+}
+function showApp(){ $("login").hidden=true; $("app").hidden=false; }
+
+function getToken(){
+  if(tokenValid()) return Promise.resolve(token);
+  return new Promise((res,rej)=>{
+    const w={res,rej}; waiters.push(w);
+    try{ google.accounts.id.prompt(); }catch(e){}
+    setTimeout(()=>{ if(waiters.includes(w)){ waiters=waiters.filter(x=>x!==w); showLogin("Logga in igen för att fortsätta."); rej({code:"auth",quiet:true}); } },8000);
+  });
+}
+
+function initGoogle(){
+  if(!window.google||!google.accounts){ setTimeout(initGoogle,150); return; }
+  google.accounts.id.initialize({ client_id:CFG.CLIENT_ID, callback:onCredential, auto_select:true, use_fedcm_for_prompt:true, itp_support:true });
+  google.accounts.id.renderButton($("gbtn"),{ theme:"outline", size:"large", shape:"pill", text:"signin_with", locale:"sv" });
+  if(!tokenValid()) google.accounts.id.prompt();
+}
+
+/* ---------- API ---------- */
+async function api(action, extra){
+  const tok=await getToken();
+  const v=st.view, t=ymKey(new Date());
+  const body=Object.assign({ token:tok, action, yms:[...new Set([v,t])] }, extra||{});
+  let res;
+  try{ res=await fetch(CFG.API_URL,{ method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"}, body:JSON.stringify(body) }); }
+  catch(e){ throw {message:"Ingen kontakt med kalkylarket. Kontrollera anslutningen."}; }
+  let j; try{ j=await res.json(); }catch(e){ throw {message:"Oväntat svar från kalkylarket. Kontrollera API-adressen."}; }
+  if(!j.ok){
+    if(j.code==="auth"){ clearToken(); showLogin(j.error); }
+    if(j.code==="forbidden"){ clearToken(); try{ google.accounts.id.disableAutoSelect(); }catch(e){} showLogin(j.error); }
+    throw {message:j.error, code:j.code, quiet:j.code==="auth"||j.code==="forbidden"};
+  }
+  if(j.serverTime) st.skew=j.serverTime-Date.now();
+  st.current=j.current||null;
+  Object.keys(j.months||{}).forEach(k=>st.months[k]=j.months[k]);
+  st.loaded=true;
+  render();
+  return j;
+}
+async function act(fn){
+  if(st.busy) return; st.busy=true; setDisabled(true);
+  try{ await fn(); }
+  catch(e){ console.error(e); if(!e.quiet) toast(e.message||"Något gick fel. Försök igen."); }
+  finally{ st.busy=false; setDisabled(false); }
+}
+function setDisabled(v){ ["punch","b-lunch","b-short","b-end","f-save","f-del"].forEach(id=>$(id).disabled=v); }
+function load(){ return act(async()=>{ await api("load"); note(""); }); }
+
+/* ---------- åtgärder ---------- */
+$("punch").onclick=()=>act(async()=>{
+  if(st.current){ const j=await api("clockOut"); toast("Utstämplad · "+durHM(netMs(j.saved))+" arbetat"); }
+  else { await api("clockIn"); toast("Instämplad "+hm(now())); }
+});
+$("b-lunch").onclick=()=>act(async()=>{ await api("startBreak",{type:"Lunch"}); toast("Lunchrast startad"); });
+$("b-short").onclick=()=>act(async()=>{ await api("startBreak",{type:"Kort rast"}); toast("Kort rast startad"); });
+$("b-end").onclick=()=>act(async()=>{ await api("endBreak"); toast("Rasten är slut"); });
+
+/* ---------- visning ---------- */
+function todayNet(t){
+  const tk=dayKey(new Date(t)); const list=st.months[ymKey(new Date(t))]||[];
+  let ms=list.filter(e=>dayKey(new Date(e.start))===tk).reduce((a,e)=>a+netMs(e),0);
+  const c=st.current;
+  if(c){ let b=c.breaks.reduce((a,x)=>a+(x.e-x.s),0); if(c.onBreak) b+=t-c.onBreak.s; ms+=(t-c.start)-b; }
+  return ms;
+}
+function renderLive(){
+  const t=now(), c=st.current, d=new Date(t);
+  $("clock").textContent=durHMS(todayNet(t));
+  $("today").textContent=DAYS_LONG[d.getDay()]+" "+d.getDate()+" "+MONTHS[d.getMonth()]+" · v. "+isoWeek(d);
+  const det=$("detail");
+  if(!c){ det.innerHTML=""; return; }
+  let b=c.breaks.reduce((a,x)=>a+(x.e-x.s),0); if(c.onBreak) b+=t-c.onBreak.s;
+  det.innerHTML="<span>Kom <b class='mono'>"+hm(c.start)+"</b></span><span>Rast <b class='mono'>"+durHM(b)+"</b></span>"+
+    (c.onBreak?"<span>"+c.onBreak.type+" sedan <b class='mono'>"+hm(c.onBreak.s)+"</b></span>":"");
+}
+function render(){
+  const c=st.current, pill=$("pill"), p=$("punch");
+  if(!st.loaded){ pill.dataset.s="off"; pill.textContent="Hämtar…"; }
+  else if(!c){ pill.dataset.s="off"; pill.textContent="Inte instämplad"; p.dataset.kind="in"; p.innerHTML="Kom<small>Stämpla in</small>"; $("brkrow").hidden=true; $("brkend").hidden=true; }
+  else if(c.onBreak){ pill.dataset.s="break"; pill.textContent="På rast · "+c.onBreak.type; p.dataset.kind="out"; p.innerHTML="Gå<small>Avslutar rasten och stämplar ut</small>"; $("brkrow").hidden=true; $("brkend").hidden=false; }
+  else { pill.dataset.s="in"; pill.textContent="Instämplad sedan "+hm(c.start); p.dataset.kind="out"; p.innerHTML="Gå<small>Stämpla ut</small>"; $("brkrow").hidden=false; $("brkend").hidden=true; }
+  renderLive(); renderMonth();
+}
+function renderMonth(){
+  const [y,m]=st.view.split("-").map(Number);
+  $("mtitle").textContent=MONTHS[m-1]+" "+y;
+  const list=(st.months[st.view]||[]).slice().sort((a,b)=>a.start-b.start);
+  $("t-hours").textContent=durHM(list.reduce((a,e)=>a+netMs(e),0));
+  $("t-days").textContent=new Set(list.map(e=>dayKey(new Date(e.start)))).size;
+  $("t-brk").textContent=durHM(list.reduce((a,e)=>a+brkMs(e),0));
+  const L=$("ledger"); L.innerHTML="";
+  if(!(st.view in st.months)){ L.innerHTML="<div class='empty'>Hämtar månaden…</div>"; return; }
+  if(!list.length){ L.innerHTML="<div class='empty'>Inga pass den här månaden ännu. Tryck <b>Kom</b> när arbetsdagen börjar, eller lägg till ett pass i efterhand.</div>"; return; }
+  let lastW=null;
+  list.forEach(e=>{
+    const d=new Date(e.start), w=isoWeek(d);
+    if(w!==lastW){ const h=document.createElement("div"); h.className="wk"; h.textContent="Vecka "+w; L.appendChild(h); lastW=w; }
+    const r=document.createElement("button"); r.className="row"; r.type="button";
+    const bm=Math.round(brkMs(e)/60000);
+    const types=[...new Set((e.breaks||[]).map(b=>b.type))].join(", ");
+    r.innerHTML="<span class='d'>"+DAYS[d.getDay()]+" "+d.getDate()+"/"+(d.getMonth()+1)+"</span>"+
+      "<span class='t mono'>"+hm(e.start)+"–"+hm(e.end)+"<small></small></span><span class='h mono'>"+durHM(netMs(e))+"</span>";
+    r.querySelector(".t small").textContent= bm? ("Rast "+bm+" min"+(types?" · "+types:"")) : "Ingen rast";
+    r.setAttribute("aria-label","Ändra pass "+DAYS_LONG[d.getDay()]+" "+d.getDate()+"/"+(d.getMonth()+1));
+    r.onclick=()=>openForm(e);
+    L.appendChild(r);
+  });
+}
+
+/* ---------- månad ---------- */
+function goMonth(delta){
+  const [y,m]=st.view.split("-").map(Number); st.view=ymKey(new Date(y,m-1+delta,1)); renderMonth();
+  if(!(st.view in st.months)) act(()=>api("load"));
+}
+$("prev").onclick=()=>goMonth(-1);
+$("next").onclick=()=>goMonth(1);
+
+/* ---------- formulär ---------- */
+function openForm(e){
+  st.editing=e||null; const del=$("f-del"); del.classList.remove("armed"); del.textContent="Radera pass";
+  $("ftitle").textContent=e?"Ändra pass":"Lägg till pass"; del.hidden=!e;
+  if(e){ $("f-date").value=dayKey(new Date(e.start)); $("f-in").value=hm(e.start); $("f-out").value=hm(e.end); $("f-brk").value=Math.round(brkMs(e)/60000); }
+  else { const [y,m]=st.view.split("-").map(Number); const n=new Date(); const d=(ymKey(n)===st.view)?n:new Date(y,m-1,1);
+    $("f-date").value=dayKey(d); $("f-in").value="08:00"; $("f-out").value="17:00"; $("f-brk").value=60; }
+  $("scrim").hidden=false;
+}
+function closeForm(){ $("scrim").hidden=true; st.editing=null; }
+$("form").addEventListener("submit",ev=>{ ev.preventDefault();
+  const [Y,M,D]=$("f-date").value.split("-").map(Number); const [ih,im]=$("f-in").value.split(":").map(Number); const [oh,om]=$("f-out").value.split(":").map(Number);
+  if(!Y||isNaN(ih)||isNaN(oh)){ toast("Fyll i datum, kom och gå."); return; }
+  const start=new Date(Y,M-1,D,ih,im).getTime(); let end=new Date(Y,M-1,D,oh,om).getTime(); if(end<=start) end+=864e5;
+  const bmin=Math.max(0,parseInt($("f-brk").value||"0",10));
+  if(bmin*60000>=end-start){ toast("Rasten kan inte vara längre än passet."); return; }
+  const old=st.editing; let entry;
+  if(old){ entry=JSON.parse(JSON.stringify(old)); entry.start=start; entry.end=end;
+    const same=old.breakManualMin==null && Math.round(brkMs(old)/60000)===bmin;
+    if(!same){ entry.breakManualMin=bmin; entry.breaks=[]; } }
+  else entry={start,end,breaks:[],breakManualMin:bmin};
+  const k=ymKey(new Date(start));
+  act(async()=>{ if(k!==st.view) st.view=k; await api("saveEntry",{entry}); closeForm(); toast(old?"Passet är ändrat":"Passet är tillagt"); });
+});
+$("f-cancel").onclick=closeForm;
+$("scrim").addEventListener("click",ev=>{ if(ev.target.id==="scrim") closeForm(); });
+$("f-del").onclick=()=>{ const b=$("f-del");
+  if(!b.classList.contains("armed")){ b.classList.add("armed"); b.textContent="Tryck igen för att radera"; return; }
+  const old=st.editing; if(!old) return;
+  act(async()=>{ await api("deleteEntry",{id:old.id}); closeForm(); toast("Passet är raderat"); });
+};
+$("add").onclick=()=>openForm(null);
+document.addEventListener("keydown",e=>{ if(e.key==="Escape") closeForm(); });
+
+/* ---------- CSV ---------- */
+function buildCsv(k){
+  const list=(st.months[k]||[]).slice().sort((a,b)=>a.start-b.start);
+  const q=s=>{ s=String(s); return /[;"\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; };
+  const dec=ms=>(Math.round(ms/36000)/100).toFixed(2).replace(".",",");
+  const rows=[["Datum","Veckodag","Vecka","Kom","Gå","Rast (min)","Raster","Arbetad tid (tt:mm)","Arbetad tid (timmar)"]];
+  let tot=0, totB=0;
+  list.forEach(e=>{ const d=new Date(e.start), n=netMs(e), b=brkMs(e); tot+=n; totB+=b;
+    const det=e.breakManualMin!=null?"Manuellt angiven":(e.breaks||[]).map(x=>x.type+" "+hm(x.s)+"–"+hm(x.e)).join(", ");
+    rows.push([dayKey(d),DAYS_LONG[d.getDay()],isoWeek(d),hm(e.start),hm(e.end),Math.round(b/60000),det,durHM(n),dec(n)]); });
+  rows.push(["Summa","","","","",Math.round(totB/60000),"",durHM(tot),dec(tot)]);
+  return "﻿"+rows.map(r=>r.map(q).join(";")).join("\r\n")+"\r\n";
+}
+$("export").onclick=()=>{
+  const k=st.view;
+  if(!(st.months[k]||[]).length){ toast("Det finns inga pass att exportera för den här månaden."); return; }
+  const name="arbetstid-"+k+".csv";
+  const blob=new Blob([buildCsv(k)],{type:"text/csv;charset=utf-8"});
+  const url=URL.createObjectURL(blob); const a=document.createElement("a");
+  a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),4000);
+  toast(name+" är nedladdad");
+};
+
+/* ---------- utloggning ---------- */
+$("logout").onclick=()=>{ clearToken(); try{ google.accounts.id.disableAutoSelect(); }catch(e){} st.loaded=false; st.current=null; st.months={}; showLogin(); };
+
+/* ---------- start ---------- */
+let lastDay=dayKey(new Date());
+setInterval(()=>{ const k=dayKey(new Date()); if(k!==lastDay){ lastDay=k; if(st.loaded) load(); } if(!$("app").hidden) renderLive(); },1000);
+document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible" && st.loaded && !st.busy && tokenValid()) act(()=>api("load")); });
+
+if(CFG.API_URL.startsWith("KLISTRA")||CFG.CLIENT_ID.startsWith("KLISTRA")){
+  showLogin("Appen är inte konfigurerad ännu. Fyll i API_URL och CLIENT_ID överst i index.html.");
+} else {
+  let saved=null; try{ saved=localStorage.getItem(TOK_KEY); }catch(e){}
+  if(saved && setToken(saved) && tokenValid()){ showApp(); render(); load(); } else { clearToken(); showLogin(); }
+  initGoogle();
+}
+})();
+</script>
+</body>
+</html>
